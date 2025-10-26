@@ -10,6 +10,77 @@ import React, { useCallback, useEffect, useState } from 'react';
 
 type Option = ReactSelectOption;
 
+/**
+ * Parse address components from Google Places result
+ * @param place - The Google Places result
+ * @returns Parsed address data
+ */
+function parseAddressComponents(place: google.maps.places.PlaceResult): {
+  street: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+  route: string;
+} {
+  const components = place.address_components ?? [];
+  let city = '';
+  let state = '';
+  let postalCode = '';
+  let country = '';
+  let route = '';
+
+  components.forEach((component) => {
+    const types = component.types;
+
+    if (types.includes('route')) {
+      route = component.long_name;
+    } else if (types.includes('locality')) {
+      city = component.long_name;
+    } else if (types.includes('administrative_area_level_1')) {
+      state = component.long_name;
+    } else if (types.includes('postal_code')) {
+      postalCode = component.long_name;
+    } else if (types.includes('country')) {
+      country = component.long_name;
+    }
+  });
+
+  // Build street address from name + route
+  let street = '';
+
+  // If we have a place name (like "MAG 218 Tower"), use it
+  if (place.name != null && place.name !== route && place.name !== city) {
+    street = place.name;
+    // Append route if it exists and is different from name
+    if (route && !street.toLowerCase().includes(route.toLowerCase())) {
+      street = `${street}, ${route}`;
+    }
+  } else {
+    // Fall back to building from formatted_address
+    street = place.formatted_address ?? '';
+
+    // Remove each component from the end
+    const partsToRemove = [country, state, city, postalCode].filter(Boolean);
+    partsToRemove.forEach((part) => {
+      street = street
+        .replace(
+          new RegExp(
+            `,?\\s*-?\\s*${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
+            'i',
+          ),
+          '',
+        )
+        .trim();
+    });
+
+    // Clean up any trailing separators
+    street = street.replace(/[,\s-]+$/, '').trim();
+  }
+
+  return { street, city, state, postalCode, country, route };
+}
+
 interface AddressData {
   lat: number;
   lng: number;
@@ -54,8 +125,7 @@ export const AddressInput: React.FC<AddressInputProps> = ({
   const placesLib = useMapsLibrary('places');
 
   useEffect(() => {
-    if (placesLib) {
-      console.log('[AddressInput] Places library loaded successfully');
+    if (placesLib != null) {
       // Initialize services
       setAutocompleteService(new placesLib.AutocompleteService());
 
@@ -93,24 +163,26 @@ export const AddressInput: React.FC<AddressInputProps> = ({
       };
 
       // Add component restrictions if provided
-      if (placesAutocomplete.componentRestrictions?.country) {
+      const countryRestriction =
+        placesAutocomplete.componentRestrictions?.country;
+      if (countryRestriction !== undefined && countryRestriction.length > 0) {
         request.componentRestrictions = {
-          country: placesAutocomplete.componentRestrictions.country,
+          country: countryRestriction,
         };
       }
 
       // Add other autocomplete options
-      if (placesAutocomplete.types) {
+      if (placesAutocomplete.types !== undefined) {
         request.types = placesAutocomplete.types;
       }
-      if (placesAutocomplete.locationBias) {
+      if (placesAutocomplete.locationBias !== undefined) {
         request.locationBias = placesAutocomplete.locationBias;
       }
-      if (placesAutocomplete.locationRestriction) {
+      if (placesAutocomplete.locationRestriction !== undefined) {
         request.locationRestriction = placesAutocomplete.locationRestriction;
       }
 
-      autocompleteService.getPlacePredictions(
+      void autocompleteService.getPlacePredictions(
         request,
         (predictions, status) => {
           setIsLoading(false);
@@ -119,17 +191,11 @@ export const AddressInput: React.FC<AddressInputProps> = ({
             status !== google.maps.places.PlacesServiceStatus.OK ||
             !predictions
           ) {
-            console.warn('[AddressInput] Predictions failed:', status);
             setOptions([]);
             return;
           }
 
-          console.log(
-            '[AddressInput] Predictions received:',
-            predictions.length,
-          );
-
-          const newOptions: Option[] = predictions.map((prediction) => ({
+          const newOptions: Array<Option> = predictions.map((prediction) => ({
             label: prediction.description,
             value: prediction.place_id,
           }));
@@ -144,14 +210,14 @@ export const AddressInput: React.FC<AddressInputProps> = ({
   // Handle selection - fetch place details
   const handleSelect = useCallback(
     (option: Option) => {
-      if (!placesService) return;
+      if (placesService == null) {
+        return;
+      }
 
       const placeId = option.value as string;
-
-      console.log('[AddressInput] Place selected:', placeId);
       setIsLoading(true);
 
-      placesService.getDetails(
+      void placesService.getDetails(
         {
           placeId,
           fields: [
@@ -165,108 +231,24 @@ export const AddressInput: React.FC<AddressInputProps> = ({
         (place, status) => {
           setIsLoading(false);
 
-          if (status !== google.maps.places.PlacesServiceStatus.OK || !place) {
-            console.error(
-              '[AddressInput] Failed to fetch place details:',
-              status,
-            );
+          if (
+            status !== google.maps.places.PlacesServiceStatus.OK ||
+            place == null
+          ) {
             return;
           }
 
-          if (!place.geometry?.location) {
-            console.warn('[AddressInput] No geometry found for place');
+          if (place.geometry?.location == null) {
             return;
           }
-
-          console.log(
-            '[AddressInput] Full place object:',
-            JSON.stringify(
-              {
-                place_id: place.place_id,
-                formatted_address: place.formatted_address,
-                name: place.name,
-                address_components: place.address_components,
-              },
-              null,
-              2,
-            ),
-          );
 
           const location = place.geometry.location;
           const lat = location.lat();
           const lng = location.lng();
 
-          // Parse address components
-          const components = place.address_components || [];
-          let city = '';
-          let state = '';
-          let postalCode = '';
-          let country = '';
-          let route = '';
-
-          components.forEach((component) => {
-            const types = component.types;
-
-            if (types.includes('route')) {
-              route = component.long_name;
-            } else if (types.includes('locality')) {
-              city = component.long_name;
-            } else if (types.includes('administrative_area_level_1')) {
-              state = component.long_name;
-            } else if (types.includes('postal_code')) {
-              postalCode = component.long_name;
-            } else if (types.includes('country')) {
-              country = component.long_name;
-            }
-          });
-
-          // Build street address from name + route
-          let street = '';
-
-          // If we have a place name (like "MAG 218 Tower"), use it
-          if (
-            place.name != null &&
-            place.name !== route &&
-            place.name !== city
-          ) {
-            street = place.name;
-            // Append route if it exists and is different from name
-            if (route && !street.toLowerCase().includes(route.toLowerCase())) {
-              street = `${street}, ${route}`;
-            }
-          } else {
-            // Fall back to building from formatted_address
-            street = place.formatted_address ?? '';
-
-            // Remove each component from the end
-            const partsToRemove = [country, state, city, postalCode].filter(
-              Boolean,
-            );
-            partsToRemove.forEach((part) => {
-              street = street
-                .replace(
-                  new RegExp(
-                    `,?\\s*-?\\s*${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
-                    'i',
-                  ),
-                  '',
-                )
-                .trim();
-            });
-
-            // Clean up any trailing separators
-            street = street.replace(/[,\s-]+$/, '').trim();
-          }
-
-          console.log('[AddressInput] Parsed address data:', {
-            lat,
-            lng,
-            street,
-            city,
-            state,
-            postalCode,
-            country,
-          });
+          // Parse address components using helper function
+          const { street, city, state, postalCode, country } =
+            parseAddressComponents(place);
 
           // Update the displayed value
           const newOption = { label: street, value: street };
@@ -303,9 +285,9 @@ export const AddressInput: React.FC<AddressInputProps> = ({
         value={selectedOption}
         options={options}
         onChange={(selected) => {
-          if (selected && !Array.isArray(selected)) {
+          if (selected != null && !Array.isArray(selected)) {
             handleSelect(selected);
-          } else if (!selected) {
+          } else if (selected == null) {
             // Handle clear
             setSelectedOption(undefined);
             onChange('');

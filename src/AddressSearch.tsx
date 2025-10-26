@@ -1,14 +1,12 @@
 'use client';
 
+import type { GmpSelectEvent } from './google-maps-web-components';
+
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
-import React, { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 interface AddressSearchProps {
   onPlaceSelect: (place: google.maps.places.Place | null) => void;
-}
-
-interface GmpSelectEvent {
-  place: google.maps.places.Place;
 }
 
 export const AddressSearch: React.FC<AddressSearchProps> = ({
@@ -20,44 +18,40 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
   const placesLib = useMapsLibrary('places');
 
   useEffect(() => {
-    if (placesLib) {
-      console.log('[AddressSearch] Places library loaded successfully');
-    } else {
-      console.log('[AddressSearch] Waiting for Places library...');
+    // Ensure places library is loaded
+    if (placesLib == null) {
+      return;
     }
   }, [placesLib]);
 
   useEffect(() => {
     // Add error listener to the autocomplete element
     const element = autocompleteRef.current;
-    if (element) {
-      console.log('[AddressSearch] Autocomplete element mounted');
+    if (element != null) {
+      const errorHandler = (event: Event): void => {
+        const customEvent = event as CustomEvent<unknown>;
+        // Error handling - could be logged to telemetry service
+        void customEvent;
+      };
 
-      element.addEventListener('gmp-error', (event: Event) => {
-        console.error('[AddressSearch] GMP Error event:', event);
-        const customEvent = event as CustomEvent;
-        console.error('[AddressSearch] Error details:', {
-          type: event.type,
-          detail: customEvent.detail,
-          target: event.target,
-        });
-      });
+      element.addEventListener('gmp-error', errorHandler);
+
+      return () => {
+        element.removeEventListener('gmp-error', errorHandler);
+      };
     }
   }, []);
 
   const handleGmpSelect = useCallback(
     (event: GmpSelectEvent) => {
-      console.log(
-        '[AddressSearch] Place selected from autocomplete:',
-        event.place?.id,
-      );
       onPlaceSelect(event.place);
     },
     [onPlaceSelect],
   );
 
   const handleError = useCallback((event: CustomEvent) => {
-    console.error('[AddressSearch] Autocomplete error:', event);
+    // Error handling - could be logged to telemetry service
+    void event;
   }, []);
 
   return (
@@ -71,22 +65,3 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     </div>
   );
 };
-
-// Type declarations for Google Maps web components
-interface GmpBasicPlaceAutocomplete extends React.HTMLAttributes<HTMLElement> {
-  'ongmp-select': (event: GmpSelectEvent) => void;
-  'ongmp-error': (event: CustomEvent) => void;
-  ref?: React.Ref<HTMLElement>;
-}
-
-declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
-  namespace JSX {
-    interface IntrinsicElements {
-      'gmp-basic-place-autocomplete': React.DetailedHTMLProps<
-        GmpBasicPlaceAutocomplete,
-        HTMLElement
-      >;
-    }
-  }
-}

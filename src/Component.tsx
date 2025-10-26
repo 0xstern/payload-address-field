@@ -6,7 +6,7 @@ import type { MapConfig, PlacesAutocompleteOptions } from './index';
 
 import { Collapsible, useField } from '@payloadcms/ui';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import React, { useCallback, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { AddressForm } from './AddressForm';
 import { AddressInput } from './AddressInput';
@@ -16,39 +16,156 @@ import './styles.css';
 
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
 
-// Log API key status (masked for security)
-if (API_KEY) {
-  console.log(
-    '[AddressPicker] API Key loaded:',
-    API_KEY.substring(0, 8) + '...' + API_KEY.substring(API_KEY.length - 4),
-  );
-} else {
-  console.error('[AddressPicker] No API key found in environment variables');
+/**
+ * Custom props for the AddressPickerField component
+ */
+export interface AddressPickerCustomProps {
+  /** Whether to show coordinate input fields */
+  showCoordinates?: boolean;
+  /** Configuration for Google Places Autocomplete */
+  placesAutocomplete?: PlacesAutocompleteOptions;
+  /** Configuration for the Google Maps component */
+  mapConfig?: MapConfig;
 }
 
-export const AddressPickerField: GroupFieldClientComponent = ({
-  field,
-  path,
-  showCoordinates = true,
-  placesAutocomplete = {},
-  mapConfig = {},
-}: {
-  field?: any;
-  path: string;
-  showCoordinates?: boolean;
-  placesAutocomplete?: PlacesAutocompleteOptions;
-  mapConfig?: MapConfig;
-}) => {
-  console.log('[AddressPicker] Field initialized with path:', path);
-  console.log('[AddressPicker] Show coordinates:', showCoordinates);
-  console.log(
-    '[AddressPicker] Places autocomplete config:',
-    placesAutocomplete,
-  );
-  console.log('[AddressPicker] Map config:', mapConfig);
+/**
+ * Setter functions for address field updates
+ */
+interface AddressSetters {
+  /** Set the formatted address value */
+  setFormattedAddress: (value: string) => void;
+  /** Set the city value */
+  setCity: (value: string) => void;
+  /** Set the state/province value */
+  setState: (value: string) => void;
+  /** Set the postal code value */
+  setPostalCode: (value: string) => void;
+  /** Set the country value */
+  setCountry: (value: string) => void;
+  /** Set the street address value */
+  setStreetAddress: (value: string) => void;
+}
 
-  // Extract label from field config
-  const fieldLabel = field?.label || 'Address';
+/**
+ * Extract field label from Payload field config
+ * @param field - The Payload field configuration
+ * @returns The field label or default 'Address'
+ */
+function getFieldLabel(field: unknown): string {
+  // Safely extract label from field config
+  if (
+    typeof field === 'object' &&
+    field !== null &&
+    'label' in field &&
+    typeof field.label === 'string' &&
+    field.label.length > 0
+  ) {
+    return field.label;
+  }
+  return 'Address';
+}
+
+/**
+ * Process geocoding result and update address fields
+ * @param place - The Google Maps geocoding result
+ * @param setters - Object containing setter functions for each address field
+ */
+function processGeocodingResult(
+  place: google.maps.GeocoderResult,
+  setters: AddressSetters,
+): void {
+  // Set formatted address
+  setters.setFormattedAddress(place.formatted_address);
+
+  // Parse address components
+  let city = '';
+  let state = '';
+  let postalCode = '';
+  let country = '';
+
+  place.address_components.forEach((component) => {
+    const types = component.types;
+
+    if (types.includes('locality')) {
+      city = component.long_name;
+      setters.setCity(city);
+    } else if (types.includes('administrative_area_level_1')) {
+      state = component.long_name;
+      setters.setState(state);
+    } else if (types.includes('postal_code')) {
+      postalCode = component.long_name;
+      setters.setPostalCode(postalCode);
+    } else if (types.includes('country')) {
+      country = component.long_name;
+      setters.setCountry(country);
+    }
+  });
+
+  // Build street address by removing city/state/country from formatted_address
+  let street = place.formatted_address;
+
+  // Remove each component from the end
+  const partsToRemove = [country, state, city, postalCode].filter(Boolean);
+  partsToRemove.forEach((part) => {
+    // Remove the part and any trailing separators (comma, dash, etc.)
+    street = street
+      .replace(
+        new RegExp(
+          `,?\\s*-?\\s*${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
+          'i',
+        ),
+        '',
+      )
+      .trim();
+  });
+
+  // Clean up any trailing separators
+  street = street.replace(/[,\s-]+$/, '').trim();
+
+  if (street.length > 0) {
+    setters.setStreetAddress(street);
+  }
+}
+
+/**
+ * Address Picker Field Component for Payload CMS
+ *
+ * A comprehensive address input field with Google Maps integration,
+ * autocomplete, and geocoding capabilities.
+ *
+ * @param props - Payload CMS field props including custom configuration
+ * @param props.field - Payload field configuration
+ * @param props.path - Field path for data binding
+ * @param props.showCoordinates - Whether to display latitude/longitude inputs
+ * @param props.placesAutocomplete - Google Places Autocomplete configuration
+ * @param props.mapConfig - Google Maps display configuration
+ * @returns The rendered address picker field component
+ */
+export const AddressPickerField: GroupFieldClientComponent = (props) => {
+  // Safely extract props with defaults
+  const showCoordinates =
+    'showCoordinates' in props && typeof props.showCoordinates === 'boolean'
+      ? props.showCoordinates
+      : true;
+
+  const placesAutocomplete: PlacesAutocompleteOptions =
+    'placesAutocomplete' in props &&
+    typeof props.placesAutocomplete === 'object' &&
+    props.placesAutocomplete !== null
+      ? (props.placesAutocomplete as PlacesAutocompleteOptions)
+      : {};
+
+  const mapConfig: MapConfig =
+    'mapConfig' in props &&
+    typeof props.mapConfig === 'object' &&
+    props.mapConfig !== null
+      ? (props.mapConfig as MapConfig)
+      : {};
+
+  const path = props.path;
+
+  // Extract label from field config safely
+  const fieldLabel = getFieldLabel(props.field);
 
   // Use Payload's useField hook for each field
   const { value: lat, setValue: setLat } = useField<number>({
@@ -87,7 +204,12 @@ export const AddressPickerField: GroupFieldClientComponent = ({
   const [mapCenter, setMapCenter] = useState<{
     lat: number;
     lng: number;
-  } | null>(lat && lng ? { lat, lng } : null);
+  } | null>(() => {
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      return { lat, lng };
+    }
+    return null;
+  });
   const [isGeocoding, setIsGeocoding] = useState(false);
 
   const handlePlaceSelect = useCallback(
@@ -102,8 +224,6 @@ export const AddressPickerField: GroupFieldClientComponent = ({
       placeId: string;
       formattedAddress: string;
     }) => {
-      console.log('[AddressPicker] Place data received:', data);
-
       // Update all fields
       setLat(data.lat);
       setLng(data.lng);
@@ -117,8 +237,6 @@ export const AddressPickerField: GroupFieldClientComponent = ({
 
       // Update map center
       setMapCenter({ lat: data.lat, lng: data.lng });
-
-      console.log('[AddressPicker] All fields updated from place selection');
     },
     [
       setLat,
@@ -134,105 +252,36 @@ export const AddressPickerField: GroupFieldClientComponent = ({
   );
 
   const handleMapMove = useCallback(
-    async (lat: number, lng: number) => {
-      console.log('[AddressPicker] Map moved to:', lat, lng);
-
+    (lat: number, lng: number) => {
       // Use Geocoding API to get address from coordinates
       const geocoder = new google.maps.Geocoder();
 
-      try {
-        console.log('[AddressPicker] Starting reverse geocoding...');
-        const result = await geocoder.geocode({ location: { lat, lng } });
-        console.log(
-          '[AddressPicker] Geocoding successful:',
-          result.results.length,
-          'results',
-        );
+      void (async () => {
+        try {
+          const result = await geocoder.geocode({ location: { lat, lng } });
 
-        if (result.results[0]) {
-          const place = result.results[0];
-          console.log(
-            '[AddressPicker] Full geocoding result:',
-            JSON.stringify(
-              {
-                formatted_address: place.formatted_address,
-                address_components: place.address_components,
-                types: place.types,
-                place_id: place.place_id,
-              },
-              null,
-              2,
-            ),
-          );
+          const firstResult = result.results[0];
+          if (firstResult !== undefined) {
+            // Update coordinates
+            setLat(lat);
+            setLng(lng);
 
-          // Update coordinates
+            // Process geocoding result using helper function
+            processGeocodingResult(firstResult, {
+              setFormattedAddress,
+              setCity,
+              setState,
+              setPostalCode,
+              setCountry,
+              setStreetAddress,
+            });
+          }
+        } catch {
+          // Still update the coordinates even if geocoding fails
           setLat(lat);
           setLng(lng);
-          setFormattedAddress(place.formatted_address);
-
-          // Parse address components
-          let city = '';
-          let state = '';
-          let postalCode = '';
-          let country = '';
-
-          place.address_components.forEach((component) => {
-            const types = component.types;
-
-            if (types.includes('locality')) {
-              city = component.long_name;
-              setCity(city);
-            } else if (types.includes('administrative_area_level_1')) {
-              state = component.long_name;
-              setState(state);
-            } else if (types.includes('postal_code')) {
-              postalCode = component.long_name;
-              setPostalCode(postalCode);
-            } else if (types.includes('country')) {
-              country = component.long_name;
-              setCountry(country);
-            }
-          });
-
-          // Build street address by removing city/state/country from formatted_address
-          let street = place.formatted_address || '';
-
-          // Remove each component from the end
-          const partsToRemove = [country, state, city, postalCode].filter(
-            Boolean,
-          );
-          partsToRemove.forEach((part) => {
-            // Remove the part and any trailing separators (comma, dash, etc.)
-            street = street
-              .replace(
-                new RegExp(
-                  `,?\\s*-?\\s*${part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`,
-                  'i',
-                ),
-                '',
-              )
-              .trim();
-          });
-
-          // Clean up any trailing separators
-          street = street.replace(/[,\s-]+$/, '').trim();
-
-          if (street) {
-            setStreetAddress(street);
-          }
-
-          console.log('[AddressPicker] Address updated from map movement');
         }
-      } catch (error) {
-        console.error('[AddressPicker] Error geocoding location:', error);
-        console.error('[AddressPicker] Geocoding error details:', {
-          message: error instanceof Error ? error.message : 'Unknown error',
-          stack: error instanceof Error ? error.stack : undefined,
-        });
-        // Still update the coordinates even if geocoding fails
-        setLat(lat);
-        setLng(lng);
-      }
+      })();
     },
     [
       setLat,
@@ -275,7 +324,11 @@ export const AddressPickerField: GroupFieldClientComponent = ({
           {/* Street address field with autocomplete */}
           <AddressInput
             path={`${path}.streetAddress`}
-            value={streetAddress || ''}
+            value={
+              typeof streetAddress === 'string' && streetAddress.length > 0
+                ? streetAddress
+                : ''
+            }
             onChange={setStreetAddress}
             onPlaceSelect={handlePlaceSelect}
             placeholder=""
@@ -287,8 +340,8 @@ export const AddressPickerField: GroupFieldClientComponent = ({
           <div className="address-picker-map-section">
             <AddressPickerMap
               center={mapCenter}
-              lat={lat}
-              lng={lng}
+              lat={typeof lat === 'number' ? lat : undefined}
+              lng={typeof lng === 'number' ? lng : undefined}
               onMapMove={handleMapMove}
               onGeocodingChange={setIsGeocoding}
               mapConfig={mapConfig}
@@ -298,13 +351,13 @@ export const AddressPickerField: GroupFieldClientComponent = ({
           {/* Other address fields */}
           <AddressForm
             path={path}
-            lat={lat}
-            lng={lng}
-            apartment={apartment}
-            city={city}
-            state={state}
-            postalCode={postalCode}
-            country={country}
+            lat={typeof lat === 'number' ? lat : undefined}
+            lng={typeof lng === 'number' ? lng : undefined}
+            apartment={typeof apartment === 'string' ? apartment : undefined}
+            city={typeof city === 'string' ? city : undefined}
+            state={typeof state === 'string' ? state : undefined}
+            postalCode={typeof postalCode === 'string' ? postalCode : undefined}
+            country={typeof country === 'string' ? country : undefined}
             setLat={setLat}
             setLng={setLng}
             setApartment={setApartment}

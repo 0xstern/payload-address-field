@@ -17,13 +17,16 @@ interface AddressPickerMapProps {
 const DEFAULT_CENTER = { lat: 48.421, lng: -123.3692 };
 const DEFAULT_ZOOM = 12;
 const SELECTED_ZOOM = 16;
+const GEOCODE_DEBOUNCE_MS = 500;
 
 // Component that adds a centered pin using map controls
 const CenterPinControl: React.FC = () => {
   const map = useMap();
 
   useEffect(() => {
-    if (!map) return;
+    if (map == null) {
+      return;
+    }
 
     const controlDiv = document.createElement('div');
     controlDiv.style.pointerEvents = 'none';
@@ -35,36 +38,51 @@ const CenterPinControl: React.FC = () => {
       </svg>
     `;
 
-    const pinPath = controlDiv.querySelector('path') as SVGPathElement;
-    const dot = controlDiv.querySelector('circle') as SVGCircleElement;
+    const pinPath = controlDiv.querySelector('path') as SVGPathElement | null;
+    const dot = controlDiv.querySelector('circle') as SVGCircleElement | null;
 
     const handleDragStart = () => {
-      if (pinPath) pinPath.style.transform = 'translateY(-10px)';
-      if (dot) dot.style.opacity = '1';
+      if (pinPath != null) {
+        pinPath.style.transform = 'translateY(-10px)';
+      }
+      if (dot != null) {
+        dot.style.opacity = '1';
+      }
     };
 
     const handleDragEnd = () => {
-      if (pinPath) pinPath.style.transform = 'translateY(0)';
-      if (dot) dot.style.opacity = '0';
+      if (pinPath != null) {
+        pinPath.style.transform = 'translateY(0)';
+      }
+      if (dot != null) {
+        dot.style.opacity = '0';
+      }
     };
 
     const dragStartListener = map.addListener('dragstart', handleDragStart);
     const dragEndListener = map.addListener('dragend', handleDragEnd);
 
-    // @ts-expect-error ControlPosition.CENTER is available put not documented
+    // @ts-expect-error ControlPosition.CENTER is available but not documented
     // This enables us to render the pin in full-screen mode
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
     map.controls[google.maps.ControlPosition.CENTER].push(controlDiv);
 
     return () => {
-      if (dragStartListener) dragStartListener.remove();
-      if (dragEndListener) dragEndListener.remove();
+      if (dragStartListener != null) {
+        dragStartListener.remove();
+      }
+      if (dragEndListener != null) {
+        dragEndListener.remove();
+      }
 
-      // @ts-expect-error ControlPosition.CENTER is available put not documented
+      // @ts-expect-error ControlPosition.CENTER is available but not documented
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
       const index = map.controls[google.maps.ControlPosition.CENTER]
         .getArray()
         .indexOf(controlDiv);
       if (index > -1) {
-        // @ts-expect-error ControlPosition.CENTER is available put not documented
+        // @ts-expect-error ControlPosition.CENTER is available but not documented
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
         map.controls[google.maps.ControlPosition.CENTER].removeAt(index);
       }
     };
@@ -72,6 +90,23 @@ const CenterPinControl: React.FC = () => {
 
   return null;
 };
+
+/**
+ * Helper to trigger geocoding after a delay
+ */
+function triggerGeocodingWithDelay(
+  lat: number,
+  lng: number,
+  onMapMove: (lat: number, lng: number) => void,
+  setIsGeocoding: (value: boolean) => void,
+  onGeocodingChange: ((isGeocoding: boolean) => void) | undefined,
+): void {
+  onMapMove(lat, lng);
+  setIsGeocoding(false);
+  if (onGeocodingChange !== undefined) {
+    onGeocodingChange(false);
+  }
+}
 
 export const AddressPickerMap: React.FC<AddressPickerMapProps> = ({
   center,
@@ -83,12 +118,12 @@ export const AddressPickerMap: React.FC<AddressPickerMapProps> = ({
 }) => {
   const map = useMap();
   const isUserDragging = useRef(false);
-  const geocodeTimeoutRef = useRef<NodeJS.Timeout>(null);
+  const geocodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const setIsGeocoding = useState(false)[1];
 
   // Pan to center when it changes (from search)
   useEffect(() => {
-    if (center && map && !isUserDragging.current) {
+    if (center != null && map != null && !isUserDragging.current) {
       map.panTo(center);
       map.setZoom(SELECTED_ZOOM);
     }
@@ -96,57 +131,77 @@ export const AddressPickerMap: React.FC<AddressPickerMapProps> = ({
 
   // Handle map idle (after pan/zoom) - trigger geocoding
   const handleMapIdle = useCallback(() => {
-    if (!map || !isUserDragging.current) return;
+    if (map == null || !isUserDragging.current) {
+      return;
+    }
 
     isUserDragging.current = false;
 
     const mapCenter = map.getCenter();
-    if (mapCenter) {
+    if (mapCenter != null) {
       const lat = mapCenter.lat();
       const lng = mapCenter.lng();
 
       // Clear any pending geocode requests
-      if (geocodeTimeoutRef.current) {
+      if (geocodeTimeoutRef.current !== null) {
         clearTimeout(geocodeTimeoutRef.current);
       }
 
       setIsGeocoding(true);
-      onGeocodingChange?.(true);
+      if (onGeocodingChange !== undefined) {
+        onGeocodingChange(true);
+      }
 
       // Debounce geocoding to avoid too many requests
-      geocodeTimeoutRef.current = setTimeout(async () => {
-        console.log('[AddressPickerMap] Map center changed:', lat, lng);
-        onMapMove(lat, lng);
-        setIsGeocoding(false);
-        onGeocodingChange?.(false);
-      }, 500); // Wait 500ms after user stops dragging
+      geocodeTimeoutRef.current = setTimeout(() => {
+        triggerGeocodingWithDelay(
+          lat,
+          lng,
+          onMapMove,
+          setIsGeocoding,
+          onGeocodingChange,
+        );
+      }, GEOCODE_DEBOUNCE_MS);
     }
-  }, [map, onMapMove, onGeocodingChange]);
+  }, [map, onMapMove, onGeocodingChange, setIsGeocoding]);
 
   // Handle drag start
   const handleDragStart = useCallback(() => {
-    console.log('[AddressPickerMap] User started dragging');
     isUserDragging.current = true;
   }, []);
 
   // Set up map event listeners
   useEffect(() => {
-    if (!map) return;
+    if (map == null) {
+      return;
+    }
 
     const idleListener = map.addListener('idle', handleMapIdle);
     const dragStartListener = map.addListener('dragstart', handleDragStart);
 
     return () => {
-      if (idleListener) idleListener.remove();
-      if (dragStartListener) dragStartListener.remove();
-      if (geocodeTimeoutRef.current) {
+      if (idleListener != null) {
+        idleListener.remove();
+      }
+      if (dragStartListener != null) {
+        dragStartListener.remove();
+      }
+      if (geocodeTimeoutRef.current !== null) {
         clearTimeout(geocodeTimeoutRef.current);
       }
     };
   }, [map, handleMapIdle, handleDragStart]);
 
+  // Compute default center with proper null checks
+  let computedDefaultCenter = DEFAULT_CENTER;
+  if (center != null) {
+    computedDefaultCenter = center;
+  } else if (lat != null && lng != null) {
+    computedDefaultCenter = { lat, lng };
+  }
+
   const {
-    defaultCenter = center || (lat && lng ? { lat, lng } : DEFAULT_CENTER),
+    defaultCenter = computedDefaultCenter,
     defaultZoom = DEFAULT_ZOOM,
     height = '350px',
     gestureHandling = 'greedy',
