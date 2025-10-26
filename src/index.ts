@@ -1,36 +1,68 @@
-import type { Field, Condition } from 'payload'
+import type { Field, GroupField } from 'payload';
+import type { MapProps } from '@vis.gl/react-google-maps';
 
-type AddressFieldOptions = {
-  name?: string
-  label?: string
-  required?: boolean
-  showCoordinates?: boolean
-  admin?: {
-    condition?: Condition
-    description?: string
-  }
-}
+import deepMerge from './utilities/deepMerge';
 
-export const addressField = (options: AddressFieldOptions = {}): Field => {
-  const {
-    name = 'address',
-    label = 'Address',
-    required = false,
-    showCoordinates = true,
-    admin = {},
-  } = options
+/**
+ * Options for configuring Google Places Autocomplete behavior
+ */
+export type PlacesAutocompleteOptions = {
+  /** Restrict results to specific countries (ISO 3166-1 Alpha-2 country codes) */
+  componentRestrictions?: {
+    country?: string | Array<string>;
+  };
+  /** Restrict results to specific place types */
+  types?: Array<string>;
+  /** Bias results to a specific area */
+  locationBias?: google.maps.places.LocationBias;
+  /** Restrict results to a specific area */
+  locationRestriction?: google.maps.places.LocationRestriction;
+};
 
-  return {
+/**
+ * Map configuration extends all MapProps from @vis.gl/react-google-maps
+ * Plus adds convenient height option
+ */
+export type MapConfig = Omit<MapProps, 'style' | 'className' | 'children'> & {
+  /** Map height (convenience prop, converted to style) */
+  height?: string | number;
+};
+
+type AddressFieldType = (options?: {
+  name?: string;
+  label?: string;
+  required?: boolean;
+  /** Show/hide latitude and longitude fields */
+  showCoordinates?: boolean;
+  /** Configure Google Places Autocomplete behavior */
+  placesAutocomplete?: PlacesAutocompleteOptions;
+  /** Configure map appearance and behavior - extends all MapProps */
+  mapConfig?: MapConfig;
+  /** Override any field properties */
+  overrides?: Partial<GroupField>;
+}) => Field;
+
+export const addressField: AddressFieldType = ({
+  name = 'address',
+  label = 'Address',
+  required = false,
+  showCoordinates = false,
+  placesAutocomplete = {},
+  mapConfig = {},
+  overrides = {},
+} = {}) => {
+  const generatedAddressField: Field = {
     name,
     type: 'group',
     label,
     admin: {
-      ...admin,
       components: {
         Field: {
           path: '@/fields/address/Component#AddressPickerField',
           clientProps: {
             showCoordinates,
+            placesAutocomplete,
+            mapConfig,
           },
         },
       },
@@ -126,5 +158,10 @@ export const addressField = (options: AddressFieldOptions = {}): Field => {
         },
       },
     ],
-  }
-}
+  };
+
+  return deepMerge(generatedAddressField, overrides);
+};
+
+// Re-export types for convenience
+export type { MapProps } from '@vis.gl/react-google-maps';

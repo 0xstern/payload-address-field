@@ -84,12 +84,12 @@ export const AddressForm: React.FC<AddressFormProps> = ({
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           setCity(e.target.value)
         }
-        placeholder="Vancouver"
+        placeholder="Victoria"
       />
 
       <TextInput
         path={`${path}.state`}
-        label="State"
+        label="State / Province"
         value={state ?? ''}
         onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
           setState(e.target.value)
@@ -105,7 +105,7 @@ export const AddressForm: React.FC<AddressFormProps> = ({
           onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
             setPostalCode(e.target.value)
           }
-          placeholder="V6A 3Z7"
+          placeholder="V8W 3M6"
         />
         <TextInput
           path={`${path}.country`}

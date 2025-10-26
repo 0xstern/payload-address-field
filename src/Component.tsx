@@ -2,9 +2,11 @@
 
 import type { GroupFieldClientComponent } from 'payload';
 
-import { useField } from '@payloadcms/ui';
+import type { MapConfig, PlacesAutocompleteOptions } from './index';
+
+import { Collapsible, useField } from '@payloadcms/ui';
 import { APIProvider } from '@vis.gl/react-google-maps';
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 
 import { AddressForm } from './AddressForm';
 import { AddressInput } from './AddressInput';
@@ -12,15 +14,42 @@ import { AddressPickerMap } from './AddressPickerMap';
 
 import './styles.css';
 
-const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '';
+const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '';
+
+// Log API key status (masked for security)
+if (API_KEY) {
+  console.log(
+    '[AddressPicker] API Key loaded:',
+    API_KEY.substring(0, 8) + '...' + API_KEY.substring(API_KEY.length - 4),
+  );
+} else {
+  console.error('[AddressPicker] No API key found in environment variables');
+}
 
 export const AddressPickerField: GroupFieldClientComponent = ({
+  field,
   path,
   showCoordinates = true,
+  placesAutocomplete = {},
+  mapConfig = {},
 }: {
+  field?: any;
   path: string;
   showCoordinates?: boolean;
+  placesAutocomplete?: PlacesAutocompleteOptions;
+  mapConfig?: MapConfig;
 }) => {
+  console.log('[AddressPicker] Field initialized with path:', path);
+  console.log('[AddressPicker] Show coordinates:', showCoordinates);
+  console.log(
+    '[AddressPicker] Places autocomplete config:',
+    placesAutocomplete,
+  );
+  console.log('[AddressPicker] Map config:', mapConfig);
+
+  // Extract label from field config
+  const fieldLabel = field?.label || 'Address';
+
   // Use Payload's useField hook for each field
   const { value: lat, setValue: setLat } = useField<number>({
     path: `${path}.lat`,
@@ -73,6 +102,8 @@ export const AddressPickerField: GroupFieldClientComponent = ({
       placeId: string;
       formattedAddress: string;
     }) => {
+      console.log('[AddressPicker] Place data received:', data);
+
       // Update all fields
       setLat(data.lat);
       setLng(data.lng);
@@ -86,6 +117,8 @@ export const AddressPickerField: GroupFieldClientComponent = ({
 
       // Update map center
       setMapCenter({ lat: data.lat, lng: data.lng });
+
+      console.log('[AddressPicker] All fields updated from place selection');
     },
     [
       setLat,
@@ -102,14 +135,35 @@ export const AddressPickerField: GroupFieldClientComponent = ({
 
   const handleMapMove = useCallback(
     async (lat: number, lng: number) => {
+      console.log('[AddressPicker] Map moved to:', lat, lng);
+
       // Use Geocoding API to get address from coordinates
       const geocoder = new google.maps.Geocoder();
 
       try {
+        console.log('[AddressPicker] Starting reverse geocoding...');
         const result = await geocoder.geocode({ location: { lat, lng } });
+        console.log(
+          '[AddressPicker] Geocoding successful:',
+          result.results.length,
+          'results',
+        );
 
-        if (result.results && result.results[0]) {
+        if (result.results[0]) {
           const place = result.results[0];
+          console.log(
+            '[AddressPicker] Full geocoding result:',
+            JSON.stringify(
+              {
+                formatted_address: place.formatted_address,
+                address_components: place.address_components,
+                types: place.types,
+                place_id: place.place_id,
+              },
+              null,
+              2,
+            ),
+          );
 
           // Update coordinates
           setLat(lat);
@@ -166,8 +220,11 @@ export const AddressPickerField: GroupFieldClientComponent = ({
           if (street) {
             setStreetAddress(street);
           }
+
+          console.log('[AddressPicker] Address updated from map movement');
         }
       } catch (error) {
+        console.error('[AddressPicker] Error geocoding location:', error);
         console.error('[AddressPicker] Geocoding error details:', {
           message: error instanceof Error ? error.message : 'Unknown error',
           stack: error instanceof Error ? error.stack : undefined,
@@ -191,60 +248,74 @@ export const AddressPickerField: GroupFieldClientComponent = ({
 
   if (!API_KEY) {
     return (
-      <div className="address-picker-error">
-        <p>Google Maps API key is not configured.</p>
-        <p>
-          Please set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in your environment
-          variables.
-        </p>
-      </div>
+      <Collapsible
+        className="address-picker-collapsible"
+        header={fieldLabel}
+        initCollapsed={false}
+      >
+        <div className="address-picker-error">
+          <p>Google Maps API key is not configured.</p>
+          <p>
+            Please set NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in your environment
+            variables.
+          </p>
+        </div>
+      </Collapsible>
     );
   }
 
   return (
-    <APIProvider apiKey={API_KEY}>
-      <div className="address-picker-container">
-        {/* Street address field with autocomplete */}
-        <AddressInput
-          path={`${path}.streetAddress`}
-          value={streetAddress || ''}
-          onChange={setStreetAddress}
-          onPlaceSelect={handlePlaceSelect}
-          placeholder="Street address"
-          isGeocoding={isGeocoding}
-        />
+    <Collapsible
+      className="address-picker-collapsible"
+      header={fieldLabel}
+      initCollapsed={false}
+    >
+      <APIProvider apiKey={API_KEY}>
+        <div className="address-picker-container">
+          {/* Street address field with autocomplete */}
+          <AddressInput
+            path={`${path}.streetAddress`}
+            value={streetAddress || ''}
+            onChange={setStreetAddress}
+            onPlaceSelect={handlePlaceSelect}
+            placeholder=""
+            isGeocoding={isGeocoding}
+            placesAutocomplete={placesAutocomplete}
+          />
 
-        {/* Map */}
-        <div className="address-picker-map-section">
-          <AddressPickerMap
-            center={mapCenter}
+          {/* Map */}
+          <div className="address-picker-map-section">
+            <AddressPickerMap
+              center={mapCenter}
+              lat={lat}
+              lng={lng}
+              onMapMove={handleMapMove}
+              onGeocodingChange={setIsGeocoding}
+              mapConfig={mapConfig}
+            />
+          </div>
+
+          {/* Other address fields */}
+          <AddressForm
+            path={path}
             lat={lat}
             lng={lng}
-            onMapMove={handleMapMove}
-            onGeocodingChange={setIsGeocoding}
+            apartment={apartment}
+            city={city}
+            state={state}
+            postalCode={postalCode}
+            country={country}
+            setLat={setLat}
+            setLng={setLng}
+            setApartment={setApartment}
+            setCity={setCity}
+            setState={setState}
+            setPostalCode={setPostalCode}
+            setCountry={setCountry}
+            showCoordinates={showCoordinates}
           />
         </div>
-
-        {/* Other address fields */}
-        <AddressForm
-          path={path}
-          lat={lat}
-          lng={lng}
-          apartment={apartment}
-          city={city}
-          state={state}
-          postalCode={postalCode}
-          country={country}
-          setLat={setLat}
-          setLng={setLng}
-          setApartment={setApartment}
-          setCity={setCity}
-          setState={setState}
-          setPostalCode={setPostalCode}
-          setCountry={setCountry}
-          showCoordinates={showCoordinates}
-        />
-      </div>
-    </APIProvider>
+      </APIProvider>
+    </Collapsible>
   );
 };

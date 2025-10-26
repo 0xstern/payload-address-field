@@ -31,7 +31,10 @@ export const AddressSearch: React.FC<AddressSearchProps> = ({
     // Add error listener to the autocomplete element
     const element = autocompleteRef.current;
     if (element) {
+      console.log('[AddressSearch] Autocomplete element mounted');
+
       element.addEventListener('gmp-error', (event: Event) => {
+        console.error('[AddressSearch] GMP Error event:', event);
         const customEvent = event as CustomEvent;
         console.error('[AddressSearch] Error details:', {
           type: event.type,
