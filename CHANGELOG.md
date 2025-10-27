@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `AddressSetters` interface for type-safe field updates
 - Helper functions (`getFieldLabel`, `processGeocodingResult`, `parseAddressComponents`)
 - DOM and DOM.Iterable libraries to TypeScript configuration
+- Enterprise build script with parallel ESM/CJS builds and asset copying
 
 ### Changed
 

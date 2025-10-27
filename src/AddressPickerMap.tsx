@@ -76,13 +76,13 @@ const CenterPinControl: React.FC = () => {
       }
 
       // @ts-expect-error ControlPosition.CENTER is available but not documented
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+      // eslint-disable-next-line
       const index = map.controls[google.maps.ControlPosition.CENTER]
         .getArray()
         .indexOf(controlDiv);
       if (index > -1) {
         // @ts-expect-error ControlPosition.CENTER is available but not documented
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+        // eslint-disable-next-line
         map.controls[google.maps.ControlPosition.CENTER].removeAt(index);
       }
     };

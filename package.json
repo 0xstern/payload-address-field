@@ -20,6 +20,7 @@
     "dist/**/*.js",
     "dist/**/*.mjs",
     "dist/**/*.d.ts",
+    "dist/**/*.css",
     "dist/**/*.cjs",
     "!dist/**/*.map",
     "README.md",

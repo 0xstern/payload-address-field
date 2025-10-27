@@ -1,9 +1,35 @@
 'use client';
 
-import type { GmpSelectEvent } from './google-maps-web-components';
-
 import { useMapsLibrary } from '@vis.gl/react-google-maps';
 import { useCallback, useEffect, useRef } from 'react';
+
+interface GmpSelectEvent {
+  place: google.maps.places.Place;
+}
+
+/**
+ * Augments the React JSX namespace to add type definitions for the
+ * Places UI Kit  web components. This provides
+ * type-checking and autocompletion for their props, including custom
+ * events, within JSX.
+ */
+interface GmpBasicPlaceAutocomplete
+  // @ts-expect-error BasicPlaceAutocompleteElement not in official types yet
+  extends React.HTMLAttributes<google.maps.places.BasicPlaceAutocompleteElement> {
+  'ongmp-select': (event: GmpSelectEvent) => void;
+}
+
+declare module 'react' {
+  namespace JSX {
+    interface IntrinsicElements {
+      'gmp-basic-place-autocomplete': React.DetailedHTMLProps<
+        GmpBasicPlaceAutocomplete,
+        // @ts-expect-error BasicPlaceAutocompleteElement not in official types yet
+        google.maps.places.BasicPlaceAutocompleteElement
+      >;
+    }
+  }
+}
 
 interface AddressSearchProps {
   onPlaceSelect: (place: google.maps.places.Place | null) => void;

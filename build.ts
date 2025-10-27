@@ -17,7 +17,7 @@ const CHECK_MARK = `${COLOR_SUCCESS}✓${RESET}`;
 const CROSS_MARK = `${COLOR_ERROR}✖${RESET}`;
 
 console.log(
-  `${BOLD}Tailwind Theme Resolver - Build Process${RESET_BOLD}${RESET}`,
+  `${BOLD}Payload Address Field - Build Process${RESET_BOLD}${RESET}`,
 );
 
 // Configuration
@@ -25,40 +25,27 @@ const BYTES_PER_KILOBYTE = 1024;
 const FILE_SIZE_DECIMAL_PLACES = 2;
 
 const outDir = './dist';
-const target = 'node' as const;
+const target = 'browser' as const;
 const sourcemap = 'linked' as const;
-const minify = true;
-const external = ['postcss', 'postcss-import', 'postcss-value-parser', 'vite'];
-
-// Entry points for different builds
-const entryPoints = [
-  // Root index (exports from v4)
-  { name: 'index', path: 'src/index.ts', outputName: 'index' },
-
-  // v4 main entry
-  { name: 'v4-index', path: 'src/v4/index.ts', outputName: 'v4/index' },
-
-  // v4 CLI
-  { name: 'v4-cli', path: 'src/v4/cli/index.ts', outputName: 'v4/cli' },
-
-  // v4 Vite plugin
-  {
-    name: 'v4-vite-plugin',
-    path: 'src/v4/vite/index.ts',
-    outputName: 'v4/vite-plugin',
-  },
-  {
-    name: 'v4-type-generator',
-    path: 'src/v4/shared/type_generator.ts',
-    outputName: 'v4/type_generator',
-  },
-  {
-    name: 'v4-spacing_helper',
-    path: 'src/v4/shared/spacing_helper.ts',
-    outputName: 'v4/shared/spacing_helper',
-  },
+const minify = false; // Don't minify for better debugging in consuming projects
+const external = [
+  'react',
+  'react-dom',
+  'payload',
+  '@payloadcms/ui',
+  '@vis.gl/react-google-maps',
+  'google.maps',
 ];
 
+// Entry points for the field
+const entryPoints = [
+  { name: 'index', path: 'src/index.ts', outputName: 'index' },
+  { name: 'Component', path: 'src/Component.tsx', outputName: 'Component' },
+];
+
+/**
+ * Cleans the output directory
+ */
 async function cleanOutputDirectory(): Promise<void> {
   console.log(`\nCleaning output directory...${RESET}`);
   try {
@@ -87,7 +74,6 @@ async function cleanOutputDirectory(): Promise<void> {
 
 /**
  * Formats file size in kilobytes
- *
  * @param bytes - File size in bytes
  * @returns Formatted string with KB suffix
  */
@@ -96,33 +82,15 @@ function formatFileSize(bytes: number): string {
 }
 
 /**
- * Ensures output directory exists for an entry point
- *
- * @param entryOutputName - Output name for the entry point
- */
-async function ensureOutputDir(entryOutputName: string): Promise<void> {
-  const outputDir = path.dirname(path.join(outDir, entryOutputName));
-  await fs.mkdir(outputDir, { recursive: true });
-}
-
-/**
  * Builds a single module in specified format
- *
  * @param entry - Entry point configuration
- * @param entry.name - Entry point name
- * @param entry.path - Entry point source path
- * @param entry.outputName - Output file name
  * @param format - Module format (esm or cjs)
  */
 async function buildModule(
   entry: { name: string; path: string; outputName: string },
   format: 'esm' | 'cjs',
 ): Promise<void> {
-  const isCLI = entry.outputName.includes('cli');
-  const extension = format === 'esm' ? '.mjs' : isCLI ? '.cjs' : '.js';
-
-  // Create nested directory if needed
-  await ensureOutputDir(entry.outputName);
+  const extension = format === 'esm' ? '.mjs' : '.js';
 
   const result = await Bun.build({
     entrypoints: [entry.path],
@@ -145,7 +113,7 @@ async function buildModule(
     throw new Error(`Build failed for ${entry.outputName}`);
   }
 
-  // Rename .js to .mjs for ESM builds or .cjs for CLI
+  // Rename .js to .mjs for ESM builds
   if (format === 'esm') {
     await fs.rename(
       path.join(outDir, `${entry.outputName}.js`),
@@ -154,15 +122,6 @@ async function buildModule(
     await fs.rename(
       path.join(outDir, `${entry.outputName}.js.map`),
       path.join(outDir, `${entry.outputName}.mjs.map`),
-    );
-  } else if (isCLI) {
-    await fs.rename(
-      path.join(outDir, `${entry.outputName}.js`),
-      path.join(outDir, `${entry.outputName}.cjs`),
-    );
-    await fs.rename(
-      path.join(outDir, `${entry.outputName}.js.map`),
-      path.join(outDir, `${entry.outputName}.cjs.map`),
     );
   }
 
@@ -179,7 +138,6 @@ async function buildModule(
 
 /**
  * Builds all modules in parallel (both ESM and CJS formats)
- * Significantly faster than sequential builds
  */
 async function buildAllModules(): Promise<void> {
   console.log(`\n${BOLD}Building ESM modules...${RESET_BOLD}${RESET}`);
@@ -203,22 +161,16 @@ async function buildAllModules(): Promise<void> {
   await Promise.all(cjsPromises);
 }
 
+/**
+ * Generates TypeScript declaration files
+ */
 async function buildTypes(): Promise<void> {
   console.log(
     `\n${BOLD}Generating TypeScript declarations...${RESET_BOLD}${RESET}`,
   );
 
   const proc = Bun.spawn(
-    [
-      'bunx',
-      'tsc',
-      '--project',
-      'tsconfig.build.json',
-      '--declaration',
-      '--emitDeclarationOnly',
-      '--outDir',
-      'dist',
-    ],
+    ['bunx', 'tsc', '--emitDeclarationOnly', '--outDir', 'dist'],
     { stdout: 'pipe', stderr: 'pipe' },
   );
 
@@ -236,22 +188,37 @@ async function buildTypes(): Promise<void> {
   console.log(
     `  ${CHECK_MARK} Generated type declarations in ${outDir}${RESET}`,
   );
-
-  // Create re-export file for vite-plugin.d.ts
-  const vitePluginDts = `/**
- * Vite plugin for automatic Tailwind theme type generation
- */
-export { tailwindResolver } from './vite/index';
-export type { VitePluginOptions } from './vite/index';
-`;
-  await fs.writeFile(
-    path.join(outDir, 'v4', 'vite-plugin.d.ts'),
-    vitePluginDts,
-    'utf-8',
-  );
-  console.log(`  ${CHECK_MARK} Created re-export: v4/vite-plugin.d.ts${RESET}`);
 }
 
+/**
+ * Copies CSS file to dist
+ */
+async function copyAssets(): Promise<void> {
+  console.log(`\n${BOLD}Copying assets...${RESET_BOLD}${RESET}`);
+
+  // Copy styles.css
+  const srcCSS = path.join('src', 'styles.css');
+  const destCSS = path.join(outDir, 'styles.css');
+
+  try {
+    await fs.copyFile(srcCSS, destCSS);
+    const stats = await fs.stat(destCSS);
+    const sizeKB = formatFileSize(stats.size);
+    console.log(`  ${CHECK_MARK} Copied styles.css (${sizeKB} KB)${RESET}`);
+  } catch (error) {
+    console.error(
+      `  ${CROSS_MARK} ${COLOR_ERROR}Failed to copy styles.css:${RESET}`,
+      error,
+    );
+    throw error;
+  }
+}
+
+/**
+ * Lists all build artifacts
+ * @param dir - Directory to list
+ * @param prefix - Prefix for nested items
+ */
 async function listBuildArtifacts(
   dir: string,
   prefix: string = '',
@@ -276,29 +243,14 @@ async function listBuildArtifacts(
   }
 }
 
-async function addShebangToCLI(): Promise<void> {
-  const cliPath = path.join(outDir, 'v4', 'cli.cjs');
-  const content = await fs.readFile(cliPath, 'utf-8');
-
-  // Add shebang if not present (use node since it's more compatible)
-  if (!content.startsWith('#!')) {
-    const wrappedContent = `#!/usr/bin/env node
-${content}`;
-    await fs.writeFile(cliPath, wrappedContent, 'utf-8');
-  }
-
-  // Make executable (0o755 = rwxr-xr-x)
-  const EXECUTABLE_MODE = 0o755;
-  await fs.chmod(cliPath, EXECUTABLE_MODE);
-
-  console.log(`  ${CHECK_MARK} Added shebang and made CLI executable${RESET}`);
-}
-
+/**
+ * Main build process execution
+ */
 async function executeBuildProcess(): Promise<void> {
   await cleanOutputDirectory();
   await buildAllModules();
   await buildTypes();
-  await addShebangToCLI();
+  await copyAssets();
 
   console.log(`\n${BOLD}Build artifacts:${RESET_BOLD}${RESET}`);
   await listBuildArtifacts(outDir);
