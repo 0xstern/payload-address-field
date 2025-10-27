@@ -64,25 +64,21 @@ const CenterPinControl: React.FC = () => {
 
     // @ts-expect-error ControlPosition.CENTER is available but not documented
     // This enables us to render the pin in full-screen mode
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     map.controls[google.maps.ControlPosition.CENTER].push(controlDiv);
 
     return () => {
-      if (dragStartListener != null) {
-        dragStartListener.remove();
-      }
-      if (dragEndListener != null) {
-        dragEndListener.remove();
-      }
+      dragStartListener.remove();
+      dragEndListener.remove();
 
       // @ts-expect-error ControlPosition.CENTER is available but not documented
-      // eslint-disable-next-line
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
       const index = map.controls[google.maps.ControlPosition.CENTER]
         .getArray()
         .indexOf(controlDiv);
       if (index > -1) {
         // @ts-expect-error ControlPosition.CENTER is available but not documented
-        // eslint-disable-next-line
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         map.controls[google.maps.ControlPosition.CENTER].removeAt(index);
       }
     };
@@ -93,6 +89,11 @@ const CenterPinControl: React.FC = () => {
 
 /**
  * Helper to trigger geocoding after a delay
+ * @param lat - Latitude coordinate
+ * @param lng - Longitude coordinate
+ * @param onMapMove - Callback to update parent component with new coordinates
+ * @param setIsGeocoding - State setter for geocoding status
+ * @param onGeocodingChange - Optional callback to notify parent of geocoding status
  */
 function triggerGeocodingWithDelay(
   lat: number,
@@ -180,12 +181,8 @@ export const AddressPickerMap: React.FC<AddressPickerMapProps> = ({
     const dragStartListener = map.addListener('dragstart', handleDragStart);
 
     return () => {
-      if (idleListener != null) {
-        idleListener.remove();
-      }
-      if (dragStartListener != null) {
-        dragStartListener.remove();
-      }
+      idleListener.remove();
+      dragStartListener.remove();
       if (geocodeTimeoutRef.current !== null) {
         clearTimeout(geocodeTimeoutRef.current);
       }

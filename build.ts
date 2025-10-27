@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+/* eslint-disable no-console, n/no-process-exit */
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
@@ -84,6 +85,9 @@ function formatFileSize(bytes: number): string {
 /**
  * Builds a single module in specified format
  * @param entry - Entry point configuration
+ * @param entry.name - Entry point name
+ * @param entry.path - Entry point source path
+ * @param entry.outputName - Output file name
  * @param format - Module format (esm or cjs)
  */
 async function buildModule(

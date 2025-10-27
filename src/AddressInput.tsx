@@ -285,9 +285,9 @@ export const AddressInput: React.FC<AddressInputProps> = ({
         value={selectedOption}
         options={options}
         onChange={(selected) => {
-          if (selected != null && !Array.isArray(selected)) {
-            handleSelect(selected);
-          } else if (selected == null) {
+          if (!Array.isArray(selected)) {
+            handleSelect(selected as Option);
+          } else {
             // Handle clear
             setSelectedOption(undefined);
             onChange('');

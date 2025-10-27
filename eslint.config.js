@@ -142,6 +142,7 @@ export default [
       'n/no-missing-import': 'off',
       'n/no-missing-require': 'off',
       'n/no-extraneous-import': 'off',
+      'n/hashbang': 'off',
     },
   },
 
